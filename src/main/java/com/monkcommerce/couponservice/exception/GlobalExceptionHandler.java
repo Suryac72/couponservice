@@ -79,7 +79,6 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(CouponNotApplicableException.class)
     public ResponseEntity<Object> handleNotApplicable(CouponNotApplicableException ex, HttpServletRequest request) {
-        // Use 400 Bad Request for not-applicable coupons to indicate client-side issue
         Map<String, Object> body = baseBody(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
         return new ResponseEntity<>(body, new HttpHeaders(), HttpStatus.BAD_REQUEST);
     }

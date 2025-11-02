@@ -16,9 +16,5 @@ public class Coupon {
     private CouponType type;
     private LocalDate expiryDate;
     
-    /**
-     * This field will store different JSON objects based on the 'type'.
-     * e.g., CartWiseDetails, ProductWiseDetails, or BxGyDetails
-     */
     private Object details;
 }

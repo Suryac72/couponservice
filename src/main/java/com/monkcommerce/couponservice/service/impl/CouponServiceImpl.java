@@ -26,7 +26,6 @@ public class CouponServiceImpl implements CouponService {
     @Override
     public Coupon createCoupon(CreateCouponRequest request) {
         Coupon coupon = couponMapper.toEntity(request);
-        // In a real app, validate 'details' object matches 'type'
         return couponRepository.save(coupon);
     }
 

@@ -7,6 +7,6 @@ import com.monkcommerce.couponservice.dto.CartDTO;
 import com.monkcommerce.couponservice.dto.UpdatedCartResponse;
 
 public interface DiscountService {
-    List<ApplicableCouponResponse> getApplicableCoupons(CartDTO cart); // [cite: 32]
-    UpdatedCartResponse applyCoupon(String couponId, CartDTO cart); // [cite: 33]
+    List<ApplicableCouponResponse> getApplicableCoupons(CartDTO cart);
+    UpdatedCartResponse applyCoupon(String couponId, CartDTO cart);
 }

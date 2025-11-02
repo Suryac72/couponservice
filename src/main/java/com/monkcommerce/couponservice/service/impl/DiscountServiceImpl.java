@@ -29,7 +29,6 @@ public class DiscountServiceImpl implements DiscountService {
 
     @Override
     public List<ApplicableCouponResponse> getApplicableCoupons(CartDTO cart) {
-        // Find all non-expired coupons
         List<Coupon> allCoupons = couponRepository.findAll().stream()
                 .filter(c -> c.getExpiryDate() == null || c.getExpiryDate().isAfter(LocalDate.now()))
                 .collect(Collectors.toList());
@@ -51,8 +50,6 @@ public class DiscountServiceImpl implements DiscountService {
     public UpdatedCartResponse applyCoupon(String couponId, CartDTO cart) {
         Coupon coupon = couponRepository.findById(couponId)
                 .orElseThrow(() -> new CouponNotFoundException("Coupon not found with id: " + couponId));
-        
-        // Check expiry
         if (coupon.getExpiryDate() != null && coupon.getExpiryDate().isBefore(LocalDate.now())) {
             throw new CouponNotApplicableException("Coupon is expired.");
         }

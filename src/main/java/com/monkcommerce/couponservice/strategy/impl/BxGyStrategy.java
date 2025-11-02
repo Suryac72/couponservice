@@ -1,89 +1,215 @@
 package com.monkcommerce.couponservice.strategy.impl;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
 import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.monkcommerce.couponservice.dto.CartDTO;
+import com.monkcommerce.couponservice.dto.CartItemDTO;
 import com.monkcommerce.couponservice.dto.CouponDetailsDTO.BxGyDetails;
+import com.monkcommerce.couponservice.dto.CouponDetailsDTO.ProductRequirement;
 import com.monkcommerce.couponservice.dto.UpdatedCartResponse;
 import com.monkcommerce.couponservice.model.Coupon;
 import com.monkcommerce.couponservice.model.CouponType;
 import com.monkcommerce.couponservice.strategy.DiscountStrategy;
 
+import lombok.Data;
 import lombok.RequiredArgsConstructor;
 
 @Component
 @RequiredArgsConstructor
 public class BxGyStrategy implements DiscountStrategy {
-    
+
     private final ObjectMapper objectMapper;
 
     @Override
     public CouponType getCouponType() {
         return CouponType.BXGY;
     }
-    
+
     private BxGyDetails getDetails(Coupon coupon) {
+        // Use ObjectMapper to convert the generic 'details' object into our specific DTO
         return objectMapper.convertValue(coupon.getDetails(), BxGyDetails.class);
     }
 
+    /**
+     * Checks if the BxGy coupon is applicable by calculating the potential discount.
+     * It's applicable if at least one set of (Buy X, Get Y) can be fulfilled.
+     */
     @Override
     public boolean isApplicable(CartDTO cart, Coupon coupon) {
-        // TODO: Implement logic from [cite: 66-72]
-        // 1. Check if cart contains at least 'X' items from 'buyProducts' list.
-        // 2. Check if cart contains at least 'Y' items from 'getProducts' list.
-        return true; // Placeholder
+        BxGyDiscountCalculation calc = calculateDiscountInternal(cart, coupon);
+        return calc.getApplications() > 0;
     }
 
+    /**
+     * Calculates the total discount amount for the BxGy coupon.
+     */
     @Override
     public double calculateDiscount(CartDTO cart, Coupon coupon) {
-        // TODO: Implement logic from [cite: 73-77]
-        // 1. Get details (X, Y, buyProducts, getProducts, repetitionLimit).
-        // 2. Count total 'buy' items in cart.
-        // 3. Count total 'get' items in cart.
-        // 4. Calculate num_applications = min( (total_buy_items / X), (total_get_items / Y), repetitionLimit)
-        // 5. Find the (num_applications * Y) cheapest items from the 'getProducts' list in the cart.
-        // 6. Return the sum of their prices as the discount.
-        
-        // Example logic from 
-        // Buy 6 of X/Y, Get 2 of Z free. Cart has 6 X, 3 Y, 2 Z.
-        // The BxGy payload [cite: 96-107] is complex. "buy_products": [{"id": 1, "qty": 3}, {"id": 2, "qty": 3}], "get_products": [{"id": 3, "qty": 1}], "rep_limit": 2
-        // This example means "Buy 3 of P1 AND 3 of P2, Get 1 of P3 free".
-        // Let's assume the cart has 6 of P1, 3 of P2, 2 of P3.
-        // We can fulfill the "buy" condition once (we have 6 P1 and 3 P2).
-        // We can apply this 1 time.
-        // We get 1 of P3 free.
-        // But the example response says "Buy 6 of Product X or Y, Get 2 of Product Z Free" 
-        // This implies the example payload [cite: 96-107] is wrong or poorly written.
-        // I WILL FOLLOW THE TEXTUAL DESCRIPTION[cite: 67]: "Buy 2 products from the 'buy' array ... and get 1 product from the 'get' array"
-        // AND THE RESPONSE EXAMPLE: "Buy 6 ... Get 2". This sounds like B3G1, repeated twice.
-        
-        // This is a perfect example of an ASSUMPTION to list in the README[cite: 14].
-        // Assumption: The BxGy payload [cite: 96-107] is simplified to:
-        // "buy": {"productIds": ["1", "2"], "quantity": 3}, "get": {"productIds": ["3"], "quantity": 1}, "repetitionLimit": 2
-        // This means "Buy any 3 from [1, 2], Get 1 from [3] free, max 2 times".
-        
-        return 50.0; // Placeholder based on example 
+        return calculateDiscountInternal(cart, coupon).getTotalDiscount();
     }
 
+    /**
+     * Applies the discount to the cart and returns the updated cart state.
+     * This implementation finds the cheapest "get" items in the cart to make free.
+     */
     @Override
     public UpdatedCartResponse applyDiscount(CartDTO cart, Coupon coupon) {
-        // TODO: Implement logic
-        // 1. Calculate discount as above.
-        // 2. Find the actual 'get' items in the cart to discount (e.g., the cheapest ones).
-        // 3. Build the UpdatedCartResponse, setting 'totalDiscount' on the specific 'get' items.
-        // 4. The response example [cite: 181-188] is confusing and seems malformed.
-        // I will follow the other example [cite: 190] and apply discount to item 3.
-        
+        BxGyDetails details = getDetails(coupon);
+        BxGyDiscountCalculation calc = calculateDiscountInternal(cart, coupon);
         double originalTotal = cart.getTotalValue();
-        double totalDiscount = 50.0; // From calc
-        
+
         UpdatedCartResponse response = new UpdatedCartResponse();
-        //... logic to build item list ...
-        
         response.setOriginalTotalPrice(originalTotal);
-        response.setTotalDiscount(totalDiscount);
-        response.setFinalPrice(originalTotal - totalDiscount);
+        response.setTotalDiscount(calc.getTotalDiscount());
+        response.setFinalPrice(originalTotal - calc.getTotalDiscount());
+
+        // --- Logic to apply discount to specific items ---
+
+        // 1. Find all "get" product IDs from the coupon
+        List<String> getProductIds = details.getGetProducts().stream()
+                .map(ProductRequirement::getProductId)
+                .collect(Collectors.toList());
+
+        // 2. Find all matching "get" items in the cart
+        List<CartItemDTO> applicableGetItems = findApplicableCartItems(cart, getProductIds);
+
+        // 3. Find the N cheapest items to discount
+        int totalItemsToDiscount = calc.getTotalItemsToDiscount();
+        List<DiscountableItem> itemsToDiscount = findCheapestItems(applicableGetItems, totalItemsToDiscount);
+        Map<String, Long> discountedItemCounts = itemsToDiscount.stream()
+                .collect(Collectors.groupingBy(DiscountableItem::getProductId, Collectors.counting()));
+
+        // 4. Build the final updated item list
+        List<UpdatedCartResponse.UpdatedCartItem> updatedItems = new ArrayList<>();
+        for (CartItemDTO item : cart.getItems()) {
+            UpdatedCartResponse.UpdatedCartItem updatedItem = new UpdatedCartResponse.UpdatedCartItem();
+            updatedItem.setProductId(item.getProductId());
+            updatedItem.setQuantity(item.getQuantity());
+            updatedItem.setPrice(item.getPrice());
+
+            // Check if this item is one of the ones we decided to discount
+            if (discountedItemCounts.containsKey(item.getProductId())) {
+                long count = discountedItemCounts.get(item.getProductId());
+                updatedItem.setTotalDiscount(count * item.getPrice());
+                // Remove the count so we don't apply it again if the same product ID appears twice
+                discountedItemCounts.remove(item.getProductId());
+            } else {
+                updatedItem.setTotalDiscount(0);
+            }
+            updatedItems.add(updatedItem);
+        }
+
+        response.setItems(updatedItems);
         return response;
     }
+
+    private BxGyDiscountCalculation calculateDiscountInternal(CartDTO cart, Coupon coupon) {
+        BxGyDetails details = getDetails(coupon);
+
+        // Create a map of productId -> quantity in cart for easy lookup
+        Map<String, Integer> cartQuantities = cart.getItems().stream()
+                .collect(Collectors.toMap(CartItemDTO::getProductId, CartItemDTO::getQuantity, Integer::sum));
+
+        // 1. Calculate total available "BUY" batches
+        int totalBuyBatches = 0;
+        for (ProductRequirement buyReq : details.getBuyProducts()) {
+            int quantityInCart = cartQuantities.getOrDefault(buyReq.getProductId(), 0);
+            totalBuyBatches += Math.floorDiv(quantityInCart, buyReq.getQuantity());
+        }
+
+        // 2. Calculate total available "GET" batches and price per batch
+        int totalGetBatches = 0;
+        double pricePerGetBatch = 0;
+        
+        // To calculate price, we must find the cheapest "get" items
+        List<String> getProductIds = details.getGetProducts().stream()
+            .map(ProductRequirement::getProductId)
+            .collect(Collectors.toList());
+
+        List<CartItemDTO> applicableGetItems = findApplicableCartItems(cart, getProductIds);
+
+        for (ProductRequirement getReq : details.getGetProducts()) {
+            int quantityInCart = cartQuantities.getOrDefault(getReq.getProductId(), 0);
+            totalGetBatches += Math.floorDiv(quantityInCart, getReq.getQuantity());
+            
+            // For price, find the matching item in the cart
+            // This assumes get_products list has one item, like the example.
+            // For complex multi-item "get" batches, this logic would need to be expanded.
+            CartItemDTO itemInCart = applicableGetItems.stream()
+                .filter(i -> i.getProductId().equals(getReq.getProductId()))
+                .findFirst().orElse(null);
+            
+            if (itemInCart != null) {
+                pricePerGetBatch += itemInCart.getPrice() * getReq.getQuantity();
+            }
+        }
+        
+        // 3. Determine number of applications
+        int applications = Math.min(totalBuyBatches, totalGetBatches);
+        applications = Math.min(applications, details.getRepetitionLimit());
+
+        // 4. Calculate total discount
+        double totalDiscount = applications * pricePerGetBatch;
+
+        // 5. Calculate total items to be discounted (for applyDiscount method)
+        int totalItemsToDiscount = 0;
+        if (applications > 0) {
+            for (ProductRequirement getReq : details.getGetProducts()) {
+                totalItemsToDiscount += getReq.getQuantity() * applications;
+            }
+        }
+
+        return new BxGyDiscountCalculation(applications, totalDiscount, totalItemsToDiscount);
+    }
+
+    /**
+     * Helper to find all cart items that match a list of product IDs.
+     */
+    private List<CartItemDTO> findApplicableCartItems(CartDTO cart, List<String> productIds) {
+        return cart.getItems().stream()
+                .filter(item -> productIds.contains(item.getProductId()))
+                .collect(Collectors.toList());
+    }
+
+    private List<DiscountableItem> findCheapestItems(List<CartItemDTO> applicableItems, int totalItemsToDiscount) {
+        List<DiscountableItem> unrolledItems = new ArrayList<>();
+        for (CartItemDTO item : applicableItems) {
+            for (int i = 0; i < item.getQuantity(); i++) {
+                unrolledItems.add(new DiscountableItem(item.getProductId(), item.getPrice()));
+            }
+        }
+
+        // Sort by price (cheapest first) and take the number we need to discount
+        return unrolledItems.stream()
+                .sorted(Comparator.comparingDouble(DiscountableItem::getPrice))
+                .limit(totalItemsToDiscount)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Inner class to hold the result of the discount calculation.
+     */
+    @Data
+    private static class BxGyDiscountCalculation {
+        private final int applications;
+        private final double totalDiscount;
+        private final int totalItemsToDiscount;
+    }
+
+    /**
+     * Inner class to represent a single, unrolled item for sorting by price.
+     */
+    @Data
+    private static class DiscountableItem {
+        private final String productId;
+        private final double price;
+    }
 }
+

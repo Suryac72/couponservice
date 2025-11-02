@@ -18,7 +18,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class CartWiseStrategy implements DiscountStrategy {
 
-    private final ObjectMapper objectMapper; // For converting Object details
+    private final ObjectMapper objectMapper;
 
     @Override
     public CouponType getCouponType() {
@@ -46,16 +46,12 @@ public class CartWiseStrategy implements DiscountStrategy {
         double originalTotal = cart.getTotalValue();
 
         UpdatedCartResponse response = new UpdatedCartResponse();
-        // For cart-wise, the discount applies to the total, not specific items.
-        // We can prorate it across items if needed, but the spec [cite: 189]
-        // implies a single 'total_discount'.
-        
         response.setItems(cart.getItems().stream().map(item -> {
             UpdatedCartResponse.UpdatedCartItem updatedItem = new UpdatedCartResponse.UpdatedCartItem();
             updatedItem.setProductId(item.getProductId());
             updatedItem.setQuantity(item.getQuantity());
             updatedItem.setPrice(item.getPrice());
-            updatedItem.setTotalDiscount(0); // Item-level discount is 0
+            updatedItem.setTotalDiscount(0);
             return updatedItem;
         }).collect(Collectors.toList()));
 
@@ -66,7 +62,6 @@ public class CartWiseStrategy implements DiscountStrategy {
         return response;
     }
     
-    // Helper to safely cast the details
     private CartWiseDetails getDetails(Coupon coupon) {
         return objectMapper.convertValue(coupon.getDetails(), CartWiseDetails.class);
     }
