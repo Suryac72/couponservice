@@ -1,0 +1,17 @@
+Exclude build artifacts
+
+target/
+
+Exclude Git files
+
+.git/
+.gitignore
+
+Exclude Docker files
+
+Dockerfile
+docker-compose.yml
+
+Exclude other metadata
+
+README.md

@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  mongo-db:
+    image: mongo:6.0
+    container_name: mongo-db
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${SPRING_DATA_MONGODB_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${SPRING_DATA_MONGODB_PASSWORD}
+      - MONGO_INITDB_DATABASE=${SPRING_DATA_MONGODB_DATABASE}
+    volumes:
+      - mongo-data:/data/db
+
+  app:
+    container_name: coupon-service-app
+    build: .
+    ports:
+      - "8080:8080"
+    depends_on:
+      - mongo-db
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATA_MONGODB_HOST=${SPRING_DATA_MONGODB_HOST}
+      - SPRING_DATA_MONGODB_PORT=${SPRING_DATA_MONGODB_PORT}
+      - SPRING_DATA_MONGODB_USERNAME=${SPRING_DATA_MONGODB_USERNAME}
+      - SPRING_DATA_MONGODB_PASSWORD=${SPRING_DATA_MONGODB_PASSWORD}
+      - SPRING_DATA_MONGODB_DATABASE=${SPRING_DATA_MONGODB_DATABASE}
+      - SPRING_DATA_MONGODB_AUTH_DB=${SPRING_DATA_MONGODB_AUTH_DB}
+
+volumes:
+  mongo-data:
